@@ -27,26 +27,100 @@ COMMON_FLAGS=(
 )
 
 build_linux() {
-    echo "=== Building for Linux ==="
+    echo "=== Building for Linux (fully static) ==="
     local CXX="${CXX:-g++}"
     local CXXFLAGS=("${COMMON_FLAGS[@]}")
-    local PLATFORM_LIBS="-lpthread"
+
+    # CRITICAL: Static linking flags for maximum portability across Linux distros.
+    #
+    # Without these, the binary requires the EXACT same libstdc++/glibc version
+    # as the build machine. For example, building on Debian Trixie (GCC 14,
+    # GLIBCXX_3.4.35) produces a binary that fails on Linux Mint (GCC 12,
+    # GLIBCXX_3.4.30) with:
+    #   ./xbox-install: /lib/x86_64-linux-gnu/libstdc++.so.6: version
+    #   `GLIBCXX_3.4.35' not found (required by ./xbox-install)
+    #
+    # Solution: statically link EVERYTHING (libstdc++, libgcc, pthread, zlib,
+    # minizip) into the binary. The result is a self-contained executable that
+    # runs on ANY Linux x86_64 system regardless of installed library versions.
+    #
+    # Flags:
+    #   -static              = fully static binary (glibc + everything)
+    #   -static-libgcc       = static libgcc (exception handling, etc.)
+    #   -static-libstdc++    = static libstdc++ (C++ standard library)
+    #   -lpthread -ldl       = thread + dynamic loading (statically linked)
+    #
+    # Note: -static may produce warnings about getpwnam/gethostbyname.
+    # This is safe for our CLI tool — we don't do network ops or user lookups.
+    local STATIC_FLAGS="-static -static-libgcc -static-libstdc++"
+    local PLATFORM_LIBS="-lpthread -ldl"
+
+    # For static linking, we need to bundle zlib and minizip source directly
+    # (system shared libraries won't work with -static)
+    local ZLIB_SRC=""
+    local ZIP_FLAGS=""
     local ZIP_LIBS=""
-    if [ -f /usr/include/minizip/unzip.h ]; then
-        ZIP_LIBS="-lminizip -lz"; CXXFLAGS+=(-DHAS_MINIZIP)
+
+    # Check for bundled zlib source (preferred for static builds)
+    if [ -d "third_party/zlib" ] && [ -f "third_party/zlib/zlib.h" ]; then
+        echo "  Using bundled zlib source (static)"
+        ZLIB_SRC=$(find third_party/zlib -name "*.c" -not -name "example*" -not -name "minigzip*" -not -name "infcover*" | sort)
+        ZIP_FLAGS="-Ithird_party/zlib -DHAS_ZLIB"
+    elif [ -f "/usr/lib/x86_64-linux-gnu/libz.a" ] || [ -f "/usr/lib/libz.a" ]; then
+        echo "  Using system static zlib"
+        ZIP_LIBS="-lz"
+    else
+        echo "  WARNING: No static zlib found — building without ZIP support"
+        echo "    Install: sudo apt install zlib1g-dev (Debian/Ubuntu)"
+        echo "    Or:      sudo dnf install zlib-static (Fedora)"
     fi
+
+    # Check for minizip — bundle source for static builds
+    if [ -f "third_party/minizip/unzip.c" ]; then
+        echo "  Using bundled minizip source (static)"
+        ZIP_FLAGS="$ZIP_FLAGS -DHAS_MINIZIP -Ithird_party/minizip"
+        ZLIB_SRC="$ZLIB_SRC third_party/minizip/unzip.c third_party/minizip/ioapi.c"
+    elif [ -f /usr/include/minizip/unzip.h ]; then
+        echo "  WARNING: system minizip is shared — building without ZIP for static"
+        echo "    Copy minizip source to third_party/minizip/ for ZIP support"
+    fi
+
+    CXXFLAGS+=($ZIP_FLAGS)
+
     local CORE_SOURCES=$(find src -name "*.cpp" -not -name "main.cpp" | sort)
     local OBJ_DIR="$BUILD_DIR/obj"; mkdir -p "$OBJ_DIR"
-    echo "[1/3] Compiling..."
+    echo "[1/4] Compiling C++..."
     for src in $CORE_SOURCES; do
         $CXX "${CXXFLAGS[@]}" -c "$src" -o "$OBJ_DIR/$(basename $src .cpp).o"
     done
-    echo "[2/3] Static library..."
+
+    echo "[2/4] Compiling zlib + minizip (C)..."
+    local ZLIB_OBJS=""
+    if [ -n "$ZLIB_SRC" ]; then
+        for src in $ZLIB_SRC; do
+            local obj="$OBJ_DIR/z_$(basename $src .c).o"
+            $CXX "${CXXFLAGS[@]}" -x c -c "$src" -o "$obj" 2>/dev/null || \
+                gcc -O2 -DNDEBUG -c "$src" -o "$obj" 2>/dev/null || true
+            [ -f "$obj" ] && ZLIB_OBJS="$ZLIB_OBJS $obj"
+        done
+    fi
+
+    echo "[3/4] Static library..."
     ar rcs "$BUILD_DIR/libxbox_core.a" $OBJ_DIR/*.o
-    echo "[3/3] Linking..."
-    $CXX "${CXXFLAGS[@]}" src/main.cpp -o "$BUILD_DIR/xbox-install" \
+
+    echo "[4/4] Linking (fully static)..."
+    $CXX "${CXXFLAGS[@]}" $STATIC_FLAGS src/main.cpp -o "$BUILD_DIR/xbox-install" \
         -L "$BUILD_DIR" -lxbox_core $PLATFORM_LIBS $ZIP_LIBS
-    echo "✅ Linux: $BUILD_DIR/xbox-install"
+    strip "$BUILD_DIR/xbox-install" 2>/dev/null || true
+
+    # Verify it's fully static
+    if ldd "$BUILD_DIR/xbox-install" 2>&1 | grep -q "not a dynamic executable"; then
+        echo "✅ Linux (fully static): $BUILD_DIR/xbox-install"
+        echo "   Runs on ANY Linux x86_64 system (no library dependencies)"
+    else
+        echo "⚠️  Linux binary still has dynamic dependencies:"
+        ldd "$BUILD_DIR/xbox-install" 2>&1 | head -5
+    fi
 }
 
 build_windows() {
