@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Windows Application Manifest for xbox-install.exe
+
+  This manifest tells Windows:
+  1. The application does NOT require administrator privileges (asInvoker).
+     This removes the UAC shield overlay icon from the executable.
+  2. The application is compatible with Windows 7, 8, 10, and 11.
+  3. The application is DPI-aware (renders correctly on high-DPI displays).
+  4. The application uses UTF-8 as the active code page (Windows 10 1903+).
+
+  Without this manifest, Windows applies heuristics and may flag the
+  executable as requiring elevation, showing the blue/yellow UAC shield
+  icon and prompting the user with "Do you want to allow this app to
+  make changes to your device?" even though no admin rights are needed.
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+
+  <!-- Application identity -->
+  <assemblyIdentity
+      type="win32"
+      name="Xbox360Installer.XboxInstall"
+      version="1.0.0.0"
+      processorArchitecture="amd64"/>
+
+  <!-- Application description -->
+  <description>Xbox 360 Content Installer for Xenia Canary — installs TU, DLC, and save files.</description>
+
+  <!--
+    Requested execution level: asInvoker
+    This is the KEY setting that removes the UAC shield icon.
+    - asInvoker  = runs with the same privileges as the parent process (NO admin needed)
+    - requireAdministrator = ALWAYS prompts UAC (we do NOT want this)
+    - highestAvailable      = prompts UAC if user is admin (we do NOT want this either)
+  -->
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel
+            level="asInvoker"
+            uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <!--
+    Compatibility section: tells Windows this app supports modern Windows versions.
+    This prevents legacy compatibility virtualization (e.g., file/registry
+    virtualization that silently redirects writes to %LOCALAPPDATA%\VirtualStore).
+  -->
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 / 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+      <!-- Windows 8.1 -->
+      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}"/>
+      <!-- Windows 8 -->
+      <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}"/>
+      <!-- Windows 7 -->
+      <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}"/>
+    </application>
+  </compatibility>
+
+  <!--
+    Application DPI awareness.
+    - "true/pm" = system DPI aware, per-monitor DPI aware on Windows 8.1+
+    This prevents blurry scaling on high-DPI displays.
+  -->
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+      <!-- Use UTF-8 as the active code page (Windows 10 1903+) -->
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+    </windowsSettings>
+  </application>
+
+  <!--
+    Disable Windows file/registry virtualization for this process.
+    When an unsigned/legacy app writes to protected locations without admin,
+    Windows silently redirects the writes to VirtualStore. This can confuse
+    the installer. Declaring asInvoker + supportedOS already disables this,
+    but we make it explicit here for clarity.
+  -->
+
+  <!--
+    CRITICAL: Disable Program Compatibility Assistant (PCA) heuristics.
+    PCA scans FileDescription for keywords like "install", "setup", "update".
+    Even though we changed FileDescription to "Xbox 360 Content Tool" (avoiding
+    those keywords), some Windows versions still apply PCA to any exe that
+    exits quickly. The <compatibility> section + supportedOS for Win 10/11
+    above already tells Windows "this is a modern app, don't apply legacy
+    compat heuristics" — this is the official Microsoft-recommended way to
+    suppress PCA.
+  -->
+
+  <!--
+    Dependency on Microsoft.Windows.Common-Controls v6.0.
+    This forces the modern Windows theme (ComCtl32 v6) and signals to Windows
+    that the app is a modern application, further reducing PCA interference.
+    Without this, Windows may treat the exe as a legacy Windows 9x/2000 app.
+  -->
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+          type="win32"
+          name="Microsoft.Windows.Common-Controls"
+          version="6.0.0.0"
+          processorArchitecture="*"
+          publicKeyToken="6595b64144ccf1df"
+          language="*"/>
+    </dependentAssembly>
+  </dependency>
+
+</assembly>

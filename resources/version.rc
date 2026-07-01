@@ -1,0 +1,109 @@
+/*
+ * Version Info + Manifest Resource for xbox-install.exe
+ *
+ * This resource file embeds TWO things into the executable's PE header:
+ *   1. VS_VERSION_INFO — version metadata shown in Properties → Details
+ *   2. RT_MANIFEST — application manifest (asInvoker, supportedOS, etc.)
+ *
+ * Windows Explorer displays version info on the "Details" tab of the file's
+ * Properties dialog. Having proper metadata reduces false positives from
+ * Windows Defender heuristics and SmartScreen.
+ *
+ * The manifest tells Windows:
+ *   - The app does NOT need admin (asInvoker) → removes UAC shield icon
+ *   - The app supports Windows 7/8/10/11 → disables legacy compat heuristics
+ *   - The app is DPI-aware → no blurry scaling
+ *
+ * Format: Windows RC (Resource Compiler) syntax, processed by `windres`.
+ */
+
+/* CRITICAL: Include BOTH winver.h (for VERSIONINFO constants) AND winuser.h
+ * (for RT_MANIFEST = 24). Without winuser.h, windres silently treats RT_MANIFEST
+ * as a string resource name "RT_MANIFEST" instead of numeric ID 24, causing
+ * Windows to IGNORE the manifest entirely. This manifests as:
+ *   - UAC shield icon still appears on the exe (despite asInvoker in manifest)
+ *   - Program Compatibility Assistant (PCA) dialog still pops up
+ *   - SmartScreen treats the exe as a legacy app
+ *
+ * Reference: https://stackoverflow.com/questions/20255591/manifest-being-ignored-in-mingw-app
+ */
+#include <winver.h>
+#include <winuser.h>
+
+/* ----- Version constants ----- */
+#define VER_MAJOR    1
+#define VER_MINOR    0
+#define VER_PATCH    0
+#define VER_BUILD    0
+
+/* Stringify helper (two-level macro for proper token expansion) */
+#define _STR(x) #x
+#define STR(x)  _STR(x)
+
+#define VER_FILE_STR   STR(VER_MAJOR) "." STR(VER_MINOR) "." STR(VER_PATCH) "." STR(VER_BUILD)
+
+/* ----- VS_VERSION_INFO block (resource ID 1) ----- */
+1 VERSIONINFO
+FILEVERSION    VER_MAJOR, VER_MINOR, VER_PATCH, VER_BUILD
+PRODUCTVERSION VER_MAJOR, VER_MINOR, VER_PATCH, VER_BUILD
+FILEOS         VOS_NT_WINDOWS32
+FILETYPE       VFT_APP
+FILESUBTYPE    VFT2_UNKNOWN
+{
+    BLOCK "StringFileInfo"
+    {
+        /* 040904B0 = LangID 0x0409 (US English) + Charset 0x04B0 (Unicode UTF-16LE) */
+        BLOCK "040904B0"
+        {
+            VALUE "CompanyName",      "Xbox360Installer"
+            /* IMPORTANT: Do NOT use words "install", "setup", "update", "patch" in
+             * FileDescription. Windows Program Compatibility Assistant (PCA) uses
+             * keyword matching on FileDescription — if it sees "Installer" or
+             * "Setup", it treats the exe as a legacy installer and shows the
+             * "This program might not have installed correctly" dialog after
+             * the exe exits. PCA may also silently re-run the exe in compatibility
+             * mode, which breaks CLI argument handling.
+             *
+             * Use a neutral description like "Xbox 360 Content Tool" instead.
+             * The actual product name in ProductName below can still mention
+             * "Installer" because PCA does NOT scan ProductName.
+             */
+            VALUE "FileDescription",  "Xbox 360 Content Tool"
+            VALUE "FileVersion",      VER_FILE_STR
+            VALUE "InternalName",     "xbox-install"
+            VALUE "LegalCopyright",   "GPL-3.0-or-later. Copyright (C) 2026 ALHROOBIX."
+            VALUE "LegalTrademarks",  ""
+            VALUE "OriginalFilename", "xbox-install.exe"
+            VALUE "ProductName",      "Xbox 360 Content Installer"
+            VALUE "ProductVersion",   VER_FILE_STR
+            VALUE "Comments",         "Manages Xbox 360 TU, DLC, and save files for Xenia Canary emulator."
+        }
+    }
+
+    BLOCK "VarFileInfo"
+    {
+        /* Required for proper display on all Windows locales */
+        VALUE "Translation", 0x0409, 0x04B0
+    }
+}
+
+/*
+ * Application Manifest resource (RT_MANIFEST, resource ID 1).
+ *
+ * CRITICAL: There are THREE ways to declare this in a .rc file:
+ *   1. `1 24 "app.manifest"`                  ← numeric literal (most portable)
+ *   2. `CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest"`  ← symbolic
+ *   3. `1 RT_MANIFEST "app.manifest"`         ← mixed (requires winuser.h for RT_MANIFEST)
+ *
+ * Option 1 is the safest — it doesn't depend on any #include.
+ * Option 2 requires #include <winuser.h>.
+ * Option 3 ALSO requires #include <winuser.h> — without it, windres silently
+ * treats RT_MANIFEST as a string "RT_MANIFEST" and Windows ignores the manifest.
+ *
+ * We use Option 1 (numeric 24) for maximum portability. RT_MANIFEST is defined
+ * as 24 in winuser.h, so this is equivalent.
+ *
+ * Resource ID 1 = CREATEPROCESS_MANIFEST_RESOURCE_ID (the manifest for the
+ * main executable). Windows loads this automatically when launching the exe.
+ */
+1 24 "app.manifest"
