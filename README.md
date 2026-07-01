@@ -67,7 +67,7 @@ The `--xuid` flag is now supported in: `install`, `uninstall`, `disable`, `enabl
 # Fedora: sudo dnf install gcc-c++ minizip-devel zlib-devel
 # Ubuntu: sudo apt install g++ libminizip-dev zlib1g-dev
 
-git clone https://github.com/ALHROOBIX/xbox-360-installation.git
+git clone https://github.com/ALHROOBIX/Xbox-Content-Installer.git
 cd xbox-360-installation
 ./scripts/build.sh
 ```
@@ -81,7 +81,7 @@ The binary will be at `build/xbox-install`.
 # Fedora: sudo dnf install mingw64-gcc-c++ mingw64-zlib
 # Ubuntu: sudo apt install g++-mingw-w64-x86-64-posix
 
-git clone https://github.com/ALHROOBIX/xbox-360-installation.git
+git clone https://github.com/ALHROOBIX/Xbox-Content-Installer.git
 cd xbox-360-installation
 ./scripts/build.sh --windows
 ```
