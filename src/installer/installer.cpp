@@ -24,6 +24,7 @@
 #include "xbox/utils/path_utils.hpp"
 #include "xbox/utils/string_utils.hpp"
 #include "xbox/concurrency/thread_pool.hpp"
+#include "xbox/xiso/xiso_reader.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -221,6 +222,16 @@ Result<PackageInstallResult, Error> install_package(
     PackageInstallResult result;
     result.source_path = stfs_file;
     auto start = std::chrono::steady_clock::now();
+
+    // ----- Detect image type: ISO or STFS -----
+    // ISO files are XISO disc images — use XisoReader
+    // STFS files are TU/DLC/saves — use StfsReader
+
+    auto img_type = xiso::detect_image_type(stfs_file);
+    if (img_type == xiso::ImageType::XISO) {
+        XBOX_LOG_DEBUG("Detected XISO format: {}", stfs_file.string());
+        return install_iso_package(stfs_file, resolver, opts, start);
+    }
 
     // Open and parse the STFS package
     stfs::StfsReader reader;
@@ -572,6 +583,106 @@ Result<fs::path, Error> enable_package(
     }
     XBOX_LOG_INFO("Enabled: {} -> {}", e.path.string(), enabled.string());
     return enabled;
+}
+
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// install_iso_package — Install an ISO file (XISO disc image)
+//
+// ISO files MUST be installed with --extract-svod flag.
+// Without it, the user gets a helpful error message.
+// ---------------------------------------------------------------------------
+Result<PackageInstallResult, Error> install_iso_package(
+    const fs::path& file_path,
+    const PathResolver& resolver,
+    const InstallOptions& opts,
+    std::chrono::steady_clock::time_point start) {
+
+    PackageInstallResult result;
+    result.source_path = file_path;
+
+    // ISO requires --extract-svod
+    if (!opts.extract_svod_files) {
+        result.error = "ISO files require --extract-svod flag.\n"
+                       "Example: xbox-install install <file.iso> --content-root <path> --extract-svod";
+        result.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start);
+        return result;
+    }
+
+    // Open the XISO image
+    auto reader_r = xiso::ImageReader::open_iso(file_path);
+    if (!reader_r.is_ok()) {
+        result.error = reader_r.error().message();
+        result.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start);
+        return result;
+    }
+
+    auto& reader = reader_r.value();
+
+    // Find executable for reporting
+    auto exe_r = reader.find_executable();
+    std::string exe_name = exe_r.is_ok() ? exe_r.value().filename : "not found";
+    std::size_t file_count = reader.total_file_count();
+
+    XBOX_LOG_INFO("Opened XISO: root_sector={}, root_size={}, {} files, executable={}",
+                  reader.root_sector(), reader.root_size(), file_count, exe_name);
+
+    // Install path: content/0000000000000000/00000000/00007000/<filename>/
+    fs::path dest_dir = fs::path("content") / "0000000000000000" / "00000000" / "00007000" / file_path.filename();
+
+    // Check if destination exists
+    if (fs::exists(dest_dir)) {
+        bool proceed;
+        XBOX_TRY_ASSIGN(proceed, resolve_conflict(dest_dir, opts.conflict));
+        if (!proceed) {
+            result.skipped = true;
+            result.skip_reason = "already installed";
+            result.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - start);
+            return result;
+        }
+    }
+
+    // Dry run
+    if (opts.dry_run) {
+        XBOX_LOG_INFO("XISO dry-run: would extract {} files to {}", file_count, dest_dir.string());
+        result.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start);
+        return result;
+    }
+
+    // Extract files
+    XBOX_TRY(path::ensure_directory(dest_dir));
+
+    XBOX_LOG_INFO("Extracting XISO to {} (streaming, 1MB buffer)", dest_dir.string());
+
+    auto progress_cb = [&opts, &file_path](std::size_t cur, std::size_t total, std::string_view path) {
+        if (opts.on_progress) {
+            opts.on_progress(cur, total, path, file_path.string());
+        }
+    };
+
+    auto extract_r = reader.extract_all(dest_dir, progress_cb);
+    if (!extract_r.is_ok()) {
+        result.error = extract_r.error().message();
+        result.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start);
+        return result;
+    }
+
+    result.extraction.files_extracted = static_cast<u32>(file_count);
+    result.extraction.total_bytes_written = extract_r.value();
+    result.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start);
+
+    XBOX_LOG_INFO("Installed XISO {} -> {} ({} files, {} bytes)",
+                  file_path.filename().string(), dest_dir.string(),
+                  result.extraction.files_extracted, result.extraction.total_bytes_written);
+
+    return result;
 }
 
 } // namespace xbox::installer

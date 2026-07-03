@@ -1,8 +1,8 @@
 # xbox-360-installation
 
-A cross-platform command-line tool for installing Xbox 360 content — **Title Updates (TU)**, **Downloadable Content (DLC)**, and **Save Files** — in a layout 100% compatible with **Xenia Canary**.
+A cross-platform command-line tool for installing Xbox 360 content — **Title Updates (TU)**, **Downloadable Content (DLC)**, **Save Files**, and **ISO (XISO) game images** — in a layout 100% compatible with **Xenia Canary**.
 
-Built with modern C++20 with strict layer separation, atomic file extraction, SHA1 integrity verification, parallel installation via a custom Thread Pool, and full support for STFS, SVOD, and ZIP formats.
+Built with modern C++20 with strict layer separation, atomic file extraction, SHA1 integrity verification, parallel installation via a custom Thread Pool, and full support for STFS, XISO, and ZIP formats.
 
 ---
 
@@ -18,8 +18,9 @@ The tool has been tested on actual Xbox 360 files:
 | Minecraft Save (skyblock) | Save (CON) | 1.6 MB | 372 | 1 | ✅ 372/372 OK |
 | GTA IV Save (SGTA400) | Save (CON) | 790 KB | 177 | 1 | ✅ 177/177 OK |
 | Splatterhouse Save (ZIP→CON) | Save (CON) | 68 KB | 5 | 1 | ✅ 5/5 OK |
+| Splatterhouse (USA) ISO | ISO (XISO) | 7.6 GB | 3827488 | 10820 | ✅ default.xex found |
 
-**Performance:** 143ms to install 3 files (147.7 MB/s).
+**Performance:** 143ms to install 3 files (147.7 MB/s). ISO extraction: streaming 1MB buffer, ~0 RAM overhead.
 
 ---
 
@@ -55,6 +56,19 @@ The tool automatically detects the ZIP file type and handles it accordingly:
 
 ### 6. `--xuid` Support Across All Commands
 The `--xuid` flag is now supported in: `install`, `uninstall`, `disable`, `enable`, `export-save`, `list`, `saves`. This is essential for managing saves across multiple profiles.
+
+### 7. ISO (XISO) Support
+- Full XISO disc image reading (based on XGDTool architecture)
+- `info` command shows ISO details: root sector, total files, executable name
+- `install` extracts all files including `default.xex` (requires `--extract-svod` flag)
+- `list` recognizes ISO packages with 💿 icon
+- Streaming extraction (1MB buffer) — low memory, high speed
+- Supports XGD1/XGD2/XGD3 disc image offsets
+
+### 8. Fully Static Linux Binary
+- All libraries (libstdc++, libgcc, zlib, pthread) statically linked
+- Runs on ANY Linux x86_64 system (Ubuntu, Fedora, Mint, Arch, CentOS)
+- No library dependency issues (`ldd` shows "not a dynamic executable")
 
 ---
 
@@ -117,6 +131,19 @@ Pre-built binaries are available in the [Releases](../../releases) section:
     --xuid E030000018BED309
 ```
 
+### Install an ISO Game (requires --extract-svod)
+```bash
+./xbox-install install "Splatterhouse.iso" \
+    --content-root "/path/to/xenia-canary/content/" \
+    --extract-svod
+```
+
+### View Package Info (STFS or ISO)
+```bash
+./xbox-install info TU_1C424FN_0000004000000.0000000000081
+./xbox-install info "game.iso"
+```
+
 ### List All Installed Content
 ```bash
 ./xbox-install list --content-root "/path/to/xenia-canary/content/"
@@ -159,6 +186,7 @@ Pre-built binaries are available in the [Releases](../../releases) section:
 | `--xuid <hex>` | Filter by profile XUID (16-char hex) |
 | `--json` | Output in JSON format |
 | `--no-mmap` | Disable memory-mapped I/O (use for FUSE/NTFS) |
+| `--extract-svod` | Extract ISO files (required for ISO install) |
 | `-v` / `-vv` / `-vvv` | Verbose / debug / trace logging |
 | `-h` / `--help` | Show help |
 | `-V` / `--version` | Show version |
@@ -166,15 +194,25 @@ Pre-built binaries are available in the [Releases](../../releases) section:
 ### Commands
 
 #### `install <file>` — Install a package
-Installs a TU, DLC, or save file. Supports STFS (CON/LIVE/PIRS), SVOD, and ZIP.
+Installs a TU, DLC, save file, or ISO game. Supports STFS (CON/LIVE/PIRS), XISO, and ZIP.
 
 ```bash
 xbox-install install [options] <file>
 ```
 
+**For STFS (TU/DLC/Saves):**
+- No special flags needed
+- `--xuid` for profile-specific saves
+
+**For ISO:**
+- **`--extract-svod` is required!**
+- Without it, you get an error message with usage instructions
+- Extracts all files including `default.xex`
+
 **Options:**
 - `--content-root <path>` — Target content directory
 - `--xuid <hex>` — Target profile (for saves)
+- `--extract-svod` — **Required for ISO files**
 - `--no-verify` — Skip SHA1 verification
 - `--no-mmap` — Use buffer reading instead of mmap
 - `--allow-unknown` — Allow unknown content types
@@ -216,11 +254,13 @@ xbox-install saves [options] [title_id]
 **Options:** Same as `list`, plus `--json`.
 
 #### `info <file>` — Show package information
-Displays STFS header info without installing.
+Displays STFS header info or XISO disc info without installing.
 
 ```bash
 xbox-install info [options] <file>
 ```
+
+Works for both STFS files and ISO files.
 
 #### `verify <file>` — Verify SHA1 integrity
 Verifies block hashes (file-chain only, matches Xenia behavior).
@@ -293,6 +333,20 @@ content/
                 └── SGTA400.header
 ```
 
+### ISO — Extracted Files
+```
+content/
+└── 0000000000000000/
+    └── 00000000/
+        └── 00007000/
+            └── game.iso/          ← Named after the ISO file
+                ├── default.xex    ← Main executable
+                ├── $SystemUpdate/
+                ├── data/
+                │   └── ...
+                └── ...
+```
+
 ### Content Types
 | Hex | Name | Description |
 |-----|------|-------------|
@@ -328,6 +382,19 @@ content/
 - Embedded application manifest (`asInvoker` — no admin required)
 - VS_VERSION_INFO resource with proper metadata
 - Wide-char path support (`_wfopen`) for Unicode filenames
+- DEP + ASLR + High-Entropy VA enabled
+
+### XISO (ISO) Support
+- Based on XGDTool architecture (GoDReader + XisoReader)
+- Reads XISO directory tree using BFS (non-recursive, no stack overflow)
+- Supports XGD1/XGD2/XGD3 disc image offsets
+- Streaming extraction (1MB buffer) — minimal RAM usage
+- Automatically finds `default.xex` executable
+
+### Linux Static Build
+- All libraries statically linked (libstdc++, libgcc, zlib, pthread, dl)
+- `ldd` shows "not a dynamic executable" — zero dependencies
+- Runs on ANY Linux x86_64 (Ubuntu, Fedora, Mint, Arch, CentOS)
 
 ---
 
@@ -375,6 +442,7 @@ The project includes a comprehensive test suite:
 ## 📚 References and Learning Resources
 
 - [Xenia Canary source](https://github.com/xenia-canary/xenia-canary) — Primary reference (`canary_experimental` branch)
+- [XGDTool](https://github.com/wiredopposite/XGDTool) — XISO/GOD format reference and architecture
 - [Free60 STFS wiki](https://free60.org/STFS) — STFS format documentation
 - [arkem.org PDF](https://www.arkem.org/xbox360-file-reference.pdf) — Xbox 360 file format reference
 - [FIPS 180-4](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf) — SHA-1 specification
@@ -443,6 +511,7 @@ See the `LICENSE` file for the full license text, and `SPDX-License-Identifier: 
 ## 🙏 Acknowledgments
 
 - [Xenia Project](https://github.com/xenia-project) — For the amazing Xbox 360 emulator
+- [XGDTool](https://github.com/wiredopposite/XGDTool) — XISO/GOD format reference
 - [Free60](https://free60.org/) — For Xbox 360 hardware/software documentation
 - [zlib](https://zlib.net/) — For the compression library
 - [MinGW-w64](https://www.mingw-w64.org/) — For the cross-compilation toolchain

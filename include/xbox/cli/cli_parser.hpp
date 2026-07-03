@@ -36,10 +36,11 @@ struct ParsedArgs {
     bool json_output{false};
     bool dry_run{false};
     bool no_mmap{false};                              // --no-mmap: force buffer reading
+    bool extract_svod_files{false};                   // --extract-svod: extract SVOD files (default: just copy .data)
     int verbose{0};                                   // 0 = info, 1 = debug, 2 = trace
     std::size_t threads{4};                           // --threads N
     std::string content_root{};                       // --content-root PATH (empty = use saved/default)
-    std::string conflict_policy{"skip"};              // --on-conflict skip|overwrite|rename|fail
+    std::string conflict_policy{"overwrite"};          // --on-conflict skip|overwrite|rename|fail
     std::string xuid_override{};                      // --xuid XUID (force install to specific profile)
 };
 

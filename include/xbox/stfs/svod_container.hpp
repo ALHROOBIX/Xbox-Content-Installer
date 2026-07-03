@@ -39,14 +39,23 @@ struct SvodDeviceDescriptor {
     u8  worker_thread_processor{0};      // +0x02
     u8  worker_thread_priority{0};       // +0x03
     std::array<u8, 0x14> first_fragment_hash_entry{}; // +0x04 (20 bytes SHA1)
-    u8  features_byte{0};                // +0x18 - bit 1 = enhanced_gdf_layout
+    u8  features_byte{0};                // +0x18 - bit 6 = enhanced_gdf_layout (per Xenia)
     u32 num_data_blocks{0};              // +0x19 (3 bytes LE)
     u32 start_data_block{0};             // +0x1C (3 bytes LE)
     std::array<u8, 5> reserved{};        // +0x1F
 
-    // True if this SVOD uses EnhancedGDF layout
+    // True if this SVOD uses EnhancedGDF layout.
+    // Per Xenia's stfs_xbox.h SvodDeviceDescriptor:
+    //   union {
+    //     struct {
+    //       uint8_t must_be_zero_for_future_usage : 6;  // bits 0-5
+    //       uint8_t enhanced_gdf_layout : 1;            // bit 6  (value 0x40)
+    //       uint8_t zero_for_downlevel_clients : 1;     // bit 7  (value 0x80)
+    //     } bits;
+    //   } features;
+    // So enhanced_gdf_layout is BIT 6 (0x40), NOT bit 1 (0x02).
     [[nodiscard]] bool is_enhanced_gdf() const noexcept {
-        return (features_byte & 0x02) != 0;
+        return (features_byte & 0x40) != 0;
     }
 
     [[nodiscard]] std::string to_string() const;
@@ -119,5 +128,16 @@ struct SvodPackageInfo {
 // Read all SVOD metadata from a header file.
 [[nodiscard]] Result<SvodPackageInfo, Error> read_svod_info(
     const fs::path& header_path);
+
+// Get human-readable name for an SVOD layout type
+[[nodiscard]] inline std::string layout_name(SvodLayoutType layout) {
+    switch (layout) {
+        case SvodLayoutType::EnhancedGDF:   return "EnhancedGDF (EGDF)";
+        case SvodLayoutType::XSF:           return "XSF";
+        case SvodLayoutType::SingleFile:    return "SingleFile";
+        case SvodLayoutType::MultipleFiles: return "MultipleFiles";
+        default:                            return "Unknown";
+    }
+}
 
 } // namespace xbox::stfs

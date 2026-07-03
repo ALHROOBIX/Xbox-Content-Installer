@@ -28,6 +28,7 @@
 #include "xbox/stfs/stfs_reader.hpp"
 #include "xbox/utils/path_utils.hpp"
 #include "xbox/utils/string_utils.hpp"
+#include "xbox/xiso/xiso_reader.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -154,12 +155,14 @@ xbox::installer::InstallOptions make_install_options(const ParsedArgs& args) {
     opts.verify = !args.flags.contains("no-verify");
     opts.dry_run = args.dry_run;
     opts.no_mmap = args.no_mmap;
+    opts.extract_svod_files = args.extract_svod_files;
     opts.workers_per_package = args.threads;
     opts.parallel_packages = std::min<std::size_t>(2u, std::thread::hardware_concurrency());
     if (args.conflict_policy == "overwrite") opts.conflict = xbox::installer::ConflictPolicy::Overwrite;
     else if (args.conflict_policy == "rename") opts.conflict = xbox::installer::ConflictPolicy::Rename;
     else if (args.conflict_policy == "fail")   opts.conflict = xbox::installer::ConflictPolicy::Fail;
-    else opts.conflict = xbox::installer::ConflictPolicy::Skip;
+    else if (args.conflict_policy == "skip")   opts.conflict = xbox::installer::ConflictPolicy::Skip;
+    else opts.conflict = xbox::installer::ConflictPolicy::Overwrite;
     opts.allow_unknown_content_type = args.flags.contains("allow-unknown");
     return opts;
 }
@@ -613,6 +616,13 @@ int cmd_install(const ParsedArgs& args) {
         return exit_code::DATAERR;
     }
 
+    // Finalize progress bar (show 100%)
+    if (progress) {
+        progress->finish();
+        std::fprintf(stderr, "\r\033[K");
+        std::fflush(stderr);
+    }
+
     auto& r = report.value();
     if (args.json_output) {
         std::ostringstream oss;
@@ -716,7 +726,7 @@ int cmd_list(const ParsedArgs& args) {
                 std::cout << "  Installed Content" << filter_desc << "\n";
                 std::cout << "═══════════════════════════════════════════════════\n\n";
 
-                int total_tu = 0, total_dlc = 0, total_saves = 0;
+                int total_tu = 0, total_dlc = 0, total_saves = 0, total_iso = 0;
 
                 for (auto t : titles.value()) {
                     // Get all entries for this title
@@ -726,7 +736,7 @@ int cmd_list(const ParsedArgs& args) {
                     // Filter by xuid
                     std::vector<const installer::PathResolver::InstalledEntry*> filtered;
                     std::string game_name;
-                    int tu_count = 0, dlc_count = 0, save_count = 0;
+                    int tu_count = 0, dlc_count = 0, save_count = 0, iso_count = 0;
 
                     for (const auto& e : entries_r.value()) {
                         if (!xuid_matches(e, xuid_filter)) continue;
@@ -737,6 +747,7 @@ int cmd_list(const ParsedArgs& args) {
                         if (e.content_type == 0x000B0000) ++tu_count;
                         else if (e.content_type == 0x00000002) ++dlc_count;
                         else if (e.content_type == 0x00000001) ++save_count;
+                    else if (e.content_type == 0x00007000) ++iso_count;
 
                         // Get game name from first available header
                         if (game_name.empty()) {
@@ -750,6 +761,7 @@ int cmd_list(const ParsedArgs& args) {
                     total_tu += tu_count;
                     total_dlc += dlc_count;
                     total_saves += save_count;
+                    total_iso += iso_count;
 
                     // Print title header
                     std::cout << "  " << str::format_hex_u32(t);
@@ -770,7 +782,12 @@ int cmd_list(const ParsedArgs& args) {
                         std::cout << "DLC: " << dlc_count;
                         first_type = false;
                     }
-                    if (save_count > 0) {
+                    if (iso_count > 0) {
+            if (!first_type) std::cout << "  |  ";
+            std::cout << "ISO: " << iso_count;
+            first_type = false;
+        }
+        if (save_count > 0) {
                         if (!first_type) std::cout << "  |  ";
                         std::cout << "Saves: " << save_count;
                         first_type = false;
@@ -786,6 +803,7 @@ int cmd_list(const ParsedArgs& args) {
                         if (e->content_type == 0x000B0000) type_icon = "🔧";
                         else if (e->content_type == 0x00000002) type_icon = "📦";
                         else if (e->content_type == 0x00000001) type_icon = "📁";
+                        else if (e->content_type == 0x00007000) type_icon = "💿";
                         else type_icon = "📄";
 
                         std::cout << "    " << type_icon << " ";
@@ -804,7 +822,7 @@ int cmd_list(const ParsedArgs& args) {
                 std::cout << "─────────────────────────────────────────────\n";
                 std::cout << "  Total: " << total_tu << " TU  |  "
                           << total_dlc << " DLC  |  "
-                          << total_saves << " Saves\n";
+                          << total_saves << " Saves  |  " << total_iso << " ISO\n";
                 std::cout << "─────────────────────────────────────────────\n";
             }
         }
@@ -888,7 +906,7 @@ int cmd_list(const ParsedArgs& args) {
 }
 
 // ---------------------------------------------------------------------------
-// info command
+// info command — unified STFS + SVOD + GOD + ISO support
 // ---------------------------------------------------------------------------
 int cmd_info(const ParsedArgs& args) {
     using namespace xbox;
@@ -902,6 +920,49 @@ int cmd_info(const ParsedArgs& args) {
         return exit_code::NOINPUT;
     }
 
+    // ----- Detect image type: ISO or STFS -----
+    auto img_type = xiso::detect_image_type(file_path);
+
+    // ----- ISO: use XisoReader -----
+    if (img_type == xiso::ImageType::XISO) {
+        auto reader_r = xiso::ImageReader::open_iso(file_path);
+
+        if (!reader_r.is_ok()) {
+            emit_result(args, false, reader_r.error().message());
+            return exit_code::DATAERR;
+        }
+
+        const auto& reader = reader_r.value();
+
+        auto exe_r = reader.find_executable();
+        std::string exe_name = exe_r.is_ok() ? exe_r.value().filename : "not found";
+        std::size_t file_count = reader.total_file_count();
+
+        if (args.json_output) {
+            std::ostringstream oss;
+            oss << "{\"ok\":true"
+                << ",\"file\":" << json_escape(file_path.string())
+                << ",\"format\":\"" << "XISO" << "\""
+                << ",\"root_sector\":" << reader.root_sector()
+                << ",\"root_size\":" << reader.root_size()
+                << ",\"total_sectors\":" << reader.total_sectors()
+                << ",\"file_count\":" << file_count
+                << ",\"executable\":" << json_escape(exe_name)
+                << "}";
+            emit_json(args, oss.str());
+        } else {
+            std::cout << "=== " << "XISO" << " Package Info ===\n";
+            std::cout << "Format:           " << "XISO" << "\n";
+            std::cout << "Root Sector:      " << reader.root_sector() << "\n";
+            std::cout << "Root Size:        " << reader.root_size() << "\n";
+            std::cout << "Total Sectors:    " << reader.total_sectors() << "\n";
+            std::cout << "Total Files:      " << file_count << "\n";
+            std::cout << "Executable:       " << exe_name << "\n";
+        }
+        return exit_code::OK;
+    }
+
+    // ----- STFS: use StfsReader -----
     auto reader = stfs::StfsReader::open(file_path, args.no_mmap);
     if (!reader.is_ok()) {
         emit_result(args, false, reader.error().message());
@@ -921,8 +982,8 @@ int cmd_info(const ParsedArgs& args) {
         std::ostringstream oss;
         oss << "{\"ok\":true"
             << ",\"file\":" << json_escape(file_path.string())
+            << ",\"format\":\"STFS\""
             << ",\"package_type\":\"" << stfs::package_type_name(h.type) << "\""
-            << ",\"volume_type\":\"" << (h.is_svod() ? "SVOD" : "STFS") << "\""
             << ",\"title_id\":\"" << str::format_hex_u32(h.title_id) << "\""
             << ",\"content_type\":\"" << str::format_hex_u32(h.content_type) << "\""
             << ",\"content_type_name\":" << json_escape(h.content_type_name())
@@ -935,9 +996,6 @@ int cmd_info(const ParsedArgs& args) {
             << ",\"base_version\":" << h.base_version
             << ",\"media_id\":\"" << str::format_hex_u32(h.media_id) << "\""
             << ",\"content_size\":" << h.content_size
-            << ",\"metadata_version\":" << h.metadata_version
-            << ",\"license_mask\":\"" << str::format_hex_u32(h.license_mask()) << "\""
-            << ",\"profile_id\":\"" << str::to_hex(h.profile_id.data(), h.profile_id.size()) << "\""
             << ",\"file_count\":" << reader.value().file_entries().size()
             << ",\"install_path\":" << json_escape(loc.content_id_dir.string())
             << "}";
@@ -947,24 +1005,9 @@ int cmd_info(const ParsedArgs& args) {
         std::cout << h.format_summary();
         std::cout << "\nFile count: " << reader.value().file_entries().size() << "\n";
         std::cout << "\nInstall path would be:\n  " << loc.content_id_dir.string() << "\n";
-
-        if (args.flags.contains("verify")) {
-            std::cout << "\nVerifying block hashes...\n";
-            auto report = reader.value().verify_all_blocks();
-            if (!report.is_ok()) {
-                std::cout << "Verification error: " << report.error().message() << "\n";
-                return exit_code::DATAERR;
-            }
-            std::cout << "  Total blocks: " << report.value().total_blocks << "\n";
-            std::cout << "  OK:           " << report.value().verified_ok << "\n";
-            std::cout << "  Failed:       " << report.value().failed << "\n";
-            if (report.value().failed > 0) return exit_code::DATAERR;
-        }
     }
     return exit_code::OK;
 }
-
-// ---------------------------------------------------------------------------
 // verify command
 // ---------------------------------------------------------------------------
 int cmd_verify(const ParsedArgs& args) {

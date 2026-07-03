@@ -22,6 +22,7 @@
 #include "xbox/installer/path_resolver.hpp"
 #include "xbox/stfs/stfs_extractor.hpp"
 #include "xbox/stfs/stfs_reader.hpp"
+#include "xbox/xiso/xiso_reader.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -56,6 +57,13 @@ struct InstallOptions {
 
     // Force buffer reading instead of mmap (for NTFS/FUSE filesystems)
     bool no_mmap{false};
+
+    // SVOD extraction mode:
+    //   false (default) = just copy .data directory + write header (Xenia-correct)
+    //   true             = also extract files via binary tree (for inspection)
+    // Default is false because Xenia reads SVOD data directly from .data fragments
+    // during emulation — extracting files is redundant and wastes RAM/disk.
+    bool extract_svod_files{false};
 
     // Progress callback: (current_file, total_files, current_path, current_package)
     using ProgressFn = std::function<void(
@@ -137,5 +145,13 @@ struct InstallReport {
     std::string_view content_id_prefix,
     const PathResolver& resolver,
     std::optional<u64> xuid_filter = std::nullopt);
+
+// Install an ISO file (XISO disc image).
+// Requires --extract-svod flag. Extracts all files including default.xex.
+[[nodiscard]] Result<PackageInstallResult, Error> install_iso_package(
+    const fs::path& file_path,
+    const PathResolver& resolver,
+    const InstallOptions& opts,
+    std::chrono::steady_clock::time_point start);
 
 } // namespace xbox::installer

@@ -33,10 +33,11 @@ const std::vector<CommandSpec>& specs_table() {
             {"<files...>"},
             {
                 {"--content-root <path>",   "Override the content root directory"},
-                {"--on-conflict <policy>",  "skip|overwrite|rename|fail (default: skip)"},
+                {"--on-conflict <policy>",  "skip|overwrite|rename|fail (default: overwrite)"},
                 {"--threads <N>",           "Worker threads per package (default: 4)"},
                 {"--no-verify",             "Skip SHA1 verification"},
                 {"--no-mmap",               "Disable mmap (use buffer reading, for NTFS/FUSE drives)"},
+                {"--extract-svod",          "Extract SVOD/GOD files (default: just copy .data, faster)"},
                 {"--xuid <XUID>",          "Force install to specific profile (e.g., --xuid 0000000000000000)"},
                 {"--dry-run",               "Show what would be done without writing"},
                 {"--allow-unknown",         "Allow unknown content types"},
@@ -136,9 +137,9 @@ const std::vector<CommandSpec>& specs_table() {
     return specs;
 }
 
-constexpr const char* VERSION = "xbox-content-installer 1.0.0";
+constexpr const char* VERSION = "xbox-content-installer 1.0.1";
 constexpr const char* BANNER =
-    "xbox-content-installer 1.0.0 - Cross-platform Xbox 360 TU/DLC installer\n"
+    "xbox-content-installer 1.0.1 - Cross-platform Xbox 360 TU/DLC installer\n"
     "Compatible with Xenia-canary content layout\n"
     "\n"
     "USAGE:\n"
@@ -225,6 +226,8 @@ void apply_global_flag(ParsedArgs& args, const std::string& name, const std::str
         args.flags["no-verify"] = "true";
     } else if (name == "no-mmap") {
         args.no_mmap = true;
+    } else if (name == "extract-svod") {
+        args.extract_svod_files = true;
     } else if (name == "allow-unknown") {
         args.flags["allow-unknown"] = "true";
     } else if (name == "disabled") {
