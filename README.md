@@ -60,7 +60,7 @@ The `--xuid` flag is now supported in: `install`, `uninstall`, `disable`, `enabl
 ### 7. ISO (XISO) Support
 - Full XISO disc image reading (based on XGDTool architecture)
 - `info` command shows ISO details: root sector, total files, executable name
-- `install` extracts all files including `default.xex` (requires `--extract-svod` flag)
+- `install` extracts all files including `default.xex` (requires `--xiso` flag)
 - `list` recognizes ISO packages with 💿 icon
 - Streaming extraction (1MB buffer) — low memory, high speed
 - Supports XGD1/XGD2/XGD3 disc image offsets
@@ -131,11 +131,11 @@ Pre-built binaries are available in the [Releases](../../releases) section:
     --xuid E030000018BED309
 ```
 
-### Install an ISO Game (requires --extract-svod)
+### Install an ISO Game (requires --xiso)
 ```bash
 ./xbox-install install "Splatterhouse.iso" \
     --content-root "/path/to/xenia-canary/content/" \
-    --extract-svod
+    --xiso
 ```
 
 ### View Package Info (STFS or ISO)
@@ -205,14 +205,14 @@ xbox-install install [options] <file>
 - `--xuid` for profile-specific saves
 
 **For ISO:**
-- **`--extract-svod` is required!**
+- **`--xiso` is required!**
 - Without it, you get an error message with usage instructions
 - Extracts all files including `default.xex`
 
 **Options:**
 - `--content-root <path>` — Target content directory
 - `--xuid <hex>` — Target profile (for saves)
-- `--extract-svod` — **Required for ISO files**
+- `--xiso` — **Required for ISO files**
 - `--no-verify` — Skip SHA1 verification
 - `--no-mmap` — Use buffer reading instead of mmap
 - `--allow-unknown` — Allow unknown content types
