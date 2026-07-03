@@ -186,7 +186,7 @@ Pre-built binaries are available in the [Releases](../../releases) section:
 | `--xuid <hex>` | Filter by profile XUID (16-char hex) |
 | `--json` | Output in JSON format |
 | `--no-mmap` | Disable memory-mapped I/O (use for FUSE/NTFS) |
-| `--extract-svod` | Extract ISO files (required for ISO install) |
+| `--xiso` | Extract ISO files (required for ISO install) |
 | `-v` / `-vv` / `-vvv` | Verbose / debug / trace logging |
 | `-h` / `--help` | Show help |
 | `-V` / `--version` | Show version |
