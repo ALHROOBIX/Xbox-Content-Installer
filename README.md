@@ -24,7 +24,7 @@ The tool has been tested on actual Xbox 360 files:
 
 ---
 
-## 🆕 New Features in v4.0
+## 🆕 New Features in v1.0.1
 
 ### 1. Save File Support
 - Automatic installation of CON (Saved Game) files
