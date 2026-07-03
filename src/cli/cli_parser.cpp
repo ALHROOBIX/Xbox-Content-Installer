@@ -37,7 +37,7 @@ const std::vector<CommandSpec>& specs_table() {
                 {"--threads <N>",           "Worker threads per package (default: 4)"},
                 {"--no-verify",             "Skip SHA1 verification"},
                 {"--no-mmap",               "Disable mmap (use buffer reading, for NTFS/FUSE drives)"},
-                {"--extract-svod",          "Extract SVOD/GOD files (default: just copy .data, faster)"},
+                {"--xiso",                  "Extract XISO/ISO files (required for ISO install)"},
                 {"--xuid <XUID>",          "Force install to specific profile (e.g., --xuid 0000000000000000)"},
                 {"--dry-run",               "Show what would be done without writing"},
                 {"--allow-unknown",         "Allow unknown content types"},
@@ -226,8 +226,8 @@ void apply_global_flag(ParsedArgs& args, const std::string& name, const std::str
         args.flags["no-verify"] = "true";
     } else if (name == "no-mmap") {
         args.no_mmap = true;
-    } else if (name == "extract-svod") {
-        args.extract_svod_files = true;
+    } else if (name == "xiso") {
+        args.extract_xiso_files = true;
     } else if (name == "allow-unknown") {
         args.flags["allow-unknown"] = "true";
     } else if (name == "disabled") {

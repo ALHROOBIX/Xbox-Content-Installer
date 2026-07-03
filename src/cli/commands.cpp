@@ -155,7 +155,7 @@ xbox::installer::InstallOptions make_install_options(const ParsedArgs& args) {
     opts.verify = !args.flags.contains("no-verify");
     opts.dry_run = args.dry_run;
     opts.no_mmap = args.no_mmap;
-    opts.extract_svod_files = args.extract_svod_files;
+    opts.extract_xiso_files = args.extract_xiso_files;
     opts.workers_per_package = args.threads;
     opts.parallel_packages = std::min<std::size_t>(2u, std::thread::hardware_concurrency());
     if (args.conflict_policy == "overwrite") opts.conflict = xbox::installer::ConflictPolicy::Overwrite;
@@ -906,7 +906,7 @@ int cmd_list(const ParsedArgs& args) {
 }
 
 // ---------------------------------------------------------------------------
-// info command — unified STFS + SVOD + GOD + ISO support
+// info command — unified STFS + XISO + ISO support
 // ---------------------------------------------------------------------------
 int cmd_info(const ParsedArgs& args) {
     using namespace xbox;

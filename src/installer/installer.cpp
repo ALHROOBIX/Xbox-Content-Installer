@@ -266,8 +266,8 @@ Result<PackageInstallResult, Error> install_package(
     XBOX_TRY_ASSIGN(loc, resolver.resolve(header, stfs_file.filename().string()));
     result.location = loc;
 
-    // Check if this is an SVOD container (multi-file, large DLC)
-    result.is_svod = header.is_svod();
+    // Check if this is an XISO file (multi-file, large DLC)
+    
 
     // Verify block hashes if requested.
     // CRITICAL: Matches Xenia Canary behavior. Xenia does NOT verify SHA1 at all.
@@ -590,7 +590,7 @@ Result<fs::path, Error> enable_package(
 // ---------------------------------------------------------------------------
 // install_iso_package — Install an ISO file (XISO disc image)
 //
-// ISO files MUST be installed with --extract-svod flag.
+// ISO files MUST be installed with --xiso flag.
 // Without it, the user gets a helpful error message.
 // ---------------------------------------------------------------------------
 Result<PackageInstallResult, Error> install_iso_package(
@@ -602,10 +602,10 @@ Result<PackageInstallResult, Error> install_iso_package(
     PackageInstallResult result;
     result.source_path = file_path;
 
-    // ISO requires --extract-svod
-    if (!opts.extract_svod_files) {
-        result.error = "ISO files require --extract-svod flag.\n"
-                       "Example: xbox-install install <file.iso> --content-root <path> --extract-svod";
+    // ISO requires --xiso
+    if (!opts.extract_xiso_files) {
+        result.error = "ISO files require --xiso flag.\n"
+                       "Example: xbox-install install <file.iso> --content-root <path> --xiso";
         result.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start);
         return result;

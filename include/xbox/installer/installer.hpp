@@ -58,12 +58,10 @@ struct InstallOptions {
     // Force buffer reading instead of mmap (for NTFS/FUSE filesystems)
     bool no_mmap{false};
 
-    // SVOD extraction mode:
-    //   false (default) = just copy .data directory + write header (Xenia-correct)
-    //   true             = also extract files via binary tree (for inspection)
-    // Default is false because Xenia reads SVOD data directly from .data fragments
-    // during emulation — extracting files is redundant and wastes RAM/disk.
-    bool extract_svod_files{false};
+    // XISO extraction mode:
+    //   false (default) = error for ISO (must use --xiso)
+    //   true             = extract ISO files
+    bool extract_xiso_files{false};
 
     // Progress callback: (current_file, total_files, current_path, current_package)
     using ProgressFn = std::function<void(
@@ -78,7 +76,7 @@ struct PackageInstallResult {
     InstallLocation location;          // resolved install location
     stfs::ExtractReport extraction;    // extraction details
     bool skipped{false};               // skipped due to conflict policy
-    bool is_svod{false};               // was this an SVOD container?
+    bool is_xiso{false};               // was this an XISO/ISO file?
     std::string skip_reason;           // empty if not skipped
     std::string error;                 // empty on success
     std::chrono::milliseconds elapsed{};
@@ -147,7 +145,7 @@ struct InstallReport {
     std::optional<u64> xuid_filter = std::nullopt);
 
 // Install an ISO file (XISO disc image).
-// Requires --extract-svod flag. Extracts all files including default.xex.
+// Requires --xiso flag. Extracts all files including default.xex.
 [[nodiscard]] Result<PackageInstallResult, Error> install_iso_package(
     const fs::path& file_path,
     const PathResolver& resolver,
